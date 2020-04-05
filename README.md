@@ -22,9 +22,28 @@ The usecase for using Identity Platform here is best illustrated with some examp
 
 The sample usecases above demonstrate how to establish a users identity.  With that identity in context, IAP has several integrations which you can use to give access to onprem systems:
 
-* Establish VPN connectivity once from a GCP project to your on-prem system.  Once the connectivity is established, you can deploy the [IAP Connector](https://cloud.google.com/iap/docs/enabling-on-prem-howto) on GCP which treats your backend application as a protected resource.  You then expose the connector's internface externally. Your users would authenticate with whatever mechanism IAP is configured to use (which in this case is whatever Identity Platform).  Once authenticated, the request is securely tunneled to your backend system.
+* Establish VPN connectivity once from a GCP project to your on-prem system.  Once the connectivity is established, you can deploy the [IAP Connector](https://cloud.google.com/iap/docs/enabling-on-prem-howto) on GCP which treats your backend application as a protected resource.  You then expose the connector's interface externally. Your users would authenticate with whatever mechanism IAP is configured to use (which in this case is whatever Identity Platform).  Once authenticated, the request is securely tunneled to your backend system.
 
-* Your application is already exposed externally but you want to protect it with IAP.  In this case, you configure GCP to treat your application as ab [Internet network endpoint group](https://cloud.google.com/load-balancing/docs/negs/internet-neg-concepts).  This will essentially route traffic through an IAP protected loadbalncer to your backend.  Your service must validate the secure headers sent by IAP.
+* Your application is already exposed externally but you want to protect it with IAP.  In this case, you configure GCP to treat your application as an [Internet network endpoint group](https://cloud.google.com/load-balancing/docs/negs/internet-neg-concepts).  This will route traffic through an IAP protected loadbalncer to your backend.  Your service must validate the secure headers sent by IAP.  As an example of how Google uses this mode, consider the fact that most internal applications are actually DNS resolveable everywhere but access is proxied:
+  ```bash
+  $ nslookup memegen.corp.google.com 8.8.8.8
+  Server:		8.8.8.8
+  Address:	8.8.8.8#53
+
+  Non-authoritative answer:
+  memegen.corp.google.com	canonical name = uberproxy.l.google.com.
+  Name:	uberproxy.l.google.com
+  Address: 209.85.232.129
+  Name:	uberproxy.l.google.com
+  Address: 2607:f8b0:400d:c0d::81
+
+  $ curl -v https://memegen.corp.google.com/
+  > GET / HTTP/2
+  > Host: memegen.corp.google.com
+  > 
+  < HTTP/2 302 
+  < location: https://login.corp.google.com/request?s=memegen.corp.google.com:443/uberproxy/&d=https://memegen.corp.google.com/%3Fupxsrf%3DAO9zFu3IK0f_6C-DLUZ6GxreooIS0ir5dDM4FbnCwfPVqNfBog:1586098940127&maxAge=1200&authLevel=1500&keyIds=zRI,s8x
+  ```
 
 The tutorials below focus on creating a 'hello world' integration of IAP and Identity Platform using the scenarios above.
 
@@ -438,7 +457,7 @@ Notice that in the configuration, the Authentication `Method` is **GCPIP** (Iden
 
 ### On-prem Backend (VPN)
 
-  The folllowing sequence must will setup a VPN tunnel from the IAP enabled project to your on-prem network.  Once a user authenticates via IAP, the traffice to access the site will transit though the tunnel to your service.  The steps here are relatively lengthy and must be done in precise sequence.
+  The following sequence must will setup a VPN tunnel from the IAP enabled project to your on-prem network.  Once a user authenticates via IAP, the traffic to access the site will transit though the tunnel to your service.  The steps here are relatively lengthy and must be done in precise sequence.
 
     - Change Context to the `onprem project`
 
@@ -696,7 +715,7 @@ EOF
   ![images/tunnel_up.png](images/tunnel_up.png)
 
 
-#### Create onprem intenral only host
+#### Create onprem internal only host
 
 Here we will create a VM that acts as the 'intranet' site that is not publically accessible.
 
@@ -750,10 +769,10 @@ This VM will run an `apache` webserver with SSL enabled.  You can use a prebaked
   - Select Network: `default`
   - Select "Create"
 
-  Confiure DNS Entry:
+  Configure DNS Entry:
   - Select "Add a Record Set"
   - DNS Name: `onprem-internal`
-  - Addres: `192.168.0.3`
+  - Address: `192.168.0.3`
 
   ![images/dns_create.png](images/dns_create.png)  ![images/dns_entry.png](images/dns_entry.png)
 
@@ -779,7 +798,7 @@ This VM will run an `apache` webserver with SSL enabled.  You can use a prebaked
 We are now ready to deploy teh [IAP connector](https://cloud.google.com/iap/docs/enabling-on-prem-howto)
 
 
-- First deploy the SSL certificate for the COnnectors external addres
+- First deploy the SSL certificate for the COnnectors external address
 
   The IAP connector here will create a **NEW** external loadbalancer.  You can use the same one defined any of the different modes but we will continue this tutorial as if they are different
 
@@ -841,7 +860,7 @@ resources:
 
 - Deploy Connector Routing configuration.
 
-  GKE by default will not route a request from the IAP connector for the Class C address onprem (`192.168.0.3`) since that will conflict with an internal range.  The follwoing seep will allow that routing to happen using the [ip-masquerade-agent](https://cloud.google.com/kubernetes-engine/docs/how-to/ip-masquerade-agent)
+  GKE by default will not route a request from the IAP connector for the Class C address onprem (`192.168.0.3`) since that will conflict with an internal range.  The follwing step will allow that routing to happen using the [ip-masquerade-agent](https://cloud.google.com/kubernetes-engine/docs/how-to/ip-masquerade-agent)
 
   ```bash
   cd iap_cidr/
@@ -879,7 +898,7 @@ resources:
 Then access the Frontend application
  https://server-exernal.domain.com
 
-What you shoudl see is a redirect to IAP's login screen and once authenticated, a final redirect back to `server-external.domain.com` where at this point
+What you should see is a redirect to IAP's login screen and once authenticated, a final redirect back to `server-external.domain.com` where at this point
 you would see a response back from your internal intranet site:...since we deployed apache, its default page
 
 ![images/apache.png](images/apache.png)
@@ -888,7 +907,7 @@ you would see a response back from your internal intranet site:...since we deplo
 
 In this mode, we will configure IAP to use an [Internet Network Endpoint Group](https://cloud.google.com/load-balancing/docs/negs/internet-neg-concepts).
 
-This sequece builds off of the `GCE-Backend` configuration and loadbalancer it has setup.  Please complete the `GCE Bakend` setup before proceeding.
+This sequence builds off of the `GCE-Backend` configuration and loadbalancer we setup earlier setup.  Please complete the `GCE Bakend` setup before proceeding.
 
 In this flow, the request proceeds as:
 `user -> IAP -> Internet NEG -> VM(envoy -> backend)`
@@ -1000,7 +1019,7 @@ Once validated, envoy allows the request to proceed to the backend.  The backend
     At this step, we can enable IAP but we haven't deployed our envoy server yet on prem.
     We need to first determine the `backendService` that it uses.
 
-    Navigate to IAP console, Configure `external-neg`, nable external identiy auth and specify the login URL for identity platform  Identity Platform "Login Page" (`https://iap-portal-273214.firebaseapp.com`) [your url will be different (`https://$GCP_PROJECT.firebaseapp.com`)] Do not specify an API, it will get set for you.
+    Navigate to IAP console, Configure `external-neg`, enable external identity auth and specify the login URL for identity platform  Identity Platform "Login Page" (`https://iap-portal-273214.firebaseapp.com`) [your url will be different (`https://$GCP_PROJECT.firebaseapp.com`)] Do not specify an API, it will get set for you.
 
     Acquire the signedJWT audience value for the NEG backend
 
@@ -1018,15 +1037,15 @@ Once validated, envoy allows the request to proceed to the backend.  The backend
 
     ![images/iap_neg.png](images/iap_neg.png)
 
-- Deploy Backend Applcation
+- Deploy Backend Application
 
     Now deploy the backend application to the onprem system.
 
-    As mentioned, we will just deploy an envoy proxy that will check the IAP header value and then respond back with a staic respones.
+    As mentioned, we will just deploy an envoy proxy that will check the IAP header value and then respond back with a static responses.
 
-    The intent of this trivial example is to show how you can use IAP without having to modify existing codebae much to account for the header.
+    The intent of this trivial example is to show how you can use IAP without having to modify existing codebase much to account for the header.
 
-    Normally, the backend applciation you would run would accept and "auto login" the user given the header but that requires some modification of your system.
+    Normally, the backend application you would run would accept and "auto login" the user given the header but that requires some modification of your system.
 
     If you place envoy infront of your application like this, it is automatically protected by IAP but your users may see a 'double login' screen (one from IAP, second one from your native app)
 
@@ -1059,7 +1078,12 @@ Once validated, envoy allows the request to proceed to the backend.  The backend
     TODO: find better range than `0.0.0.0/0`
 
     ```bash
-    gcloud compute firewall-rules create allow-gcp-envoy-https --allow=tcp:443 --source-ranges=0.0.0.0/0  --target-tags envoy --project=$ONPREM_PROJECT  --network $ONPREM_VPC
+    gcloud compute firewall-rules create allow-gcp-envoy-https \
+      --allow=tcp:443 \
+      --source-ranges=0.0.0.0/0  \
+      --target-tags envoy \
+      --project=$ONPREM_PROJECT \
+      --network $ONPREM_VPC
     ```
 
   If you DON"T have IAP enabled and tried service directly, you should get rejected by envoy's filter
@@ -1084,7 +1108,7 @@ Once validated, envoy allows the request to proceed to the backend.  The backend
   < location: https://iap-portal.firebaseapp.com/?apiKey=AIzaS....
   ```
 
-  Try to access it thorugh login/broswer
+  Try to access it through a browser
 
   you should see an Identity login screen followed by a humble `hello from envoy`.
 
@@ -1094,4 +1118,4 @@ Once validated, envoy allows the request to proceed to the backend.  The backend
 
 ---
 
-At this point, you have setup IAP running on Google's Loadbalancer in several modes:  either you alrady deployed an application on GCP or you just exposed an applicaton on-prem but want to use IAP or just want to use IAP for an exclusively on-prem application.   In all cases, you own and control your users identity provider. 
+At this point, you have setup IAP running on Google's Loadbalancer in several modes:  either you already deployed an application on GCP or you just exposed an application on-prem but want to use IAP or just want to use IAP for an exclusively on-prem application.   In all cases, you own and control your users identity provider. 
